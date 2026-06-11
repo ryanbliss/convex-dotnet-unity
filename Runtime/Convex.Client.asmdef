@@ -1,0 +1,23 @@
+{
+    "name": "Convex.Client",
+    "rootNamespace": "Convex.Client",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "System.Reactive.dll",
+        "System.Text.Json.dll",
+        "System.Text.Encodings.Web.dll",
+        "Microsoft.Bcl.AsyncInterfaces.dll",
+        "System.Threading.Channels.dll",
+        "Microsoft.Extensions.Logging.Abstractions.dll",
+        "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+        "System.Diagnostics.DiagnosticSource.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

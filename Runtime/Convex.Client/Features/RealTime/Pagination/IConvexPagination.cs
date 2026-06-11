@@ -1,0 +1,465 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Convex.Client.Features.RealTime.Pagination;
+
+/// <summary>
+/// Interface for entities with a unique identifier.
+/// Implement this interface on your DTOs to enable automatic ID extraction in pagination,
+/// eliminating the need to call <c>WithIdExtractor()</c>.
+/// </summary>
+/// <example>
+/// <code>
+/// public class MessageDto : IHasId
+/// {
+///     [JsonPropertyName("_id")]
+///     public string Id { get; set; }
+///     // ...
+/// }
+///
+/// // Now you can skip WithIdExtractor:
+/// var paginator = client.Paginate&lt;MessageDto&gt;("messages:list")
+///     .WithPageSize(25)
+///     .Build();
+/// </code>
+/// </example>
+public interface IHasId
+{
+    /// <summary>
+    /// Gets the unique ID.
+    /// </summary>
+    string Id { get; }
+}
+
+/// <summary>
+/// Interface for entities with a sortable key.
+/// Implement this interface on your DTOs to enable automatic sort key extraction in pagination,
+/// eliminating the need to call <c>WithSortKey()</c>.
+/// </summary>
+/// <example>
+/// <code>
+/// public class MessageDto : IHasId, IHasSortKey
+/// {
+///     [JsonPropertyName("_id")]
+///     public string Id { get; set; }
+///
+///     [JsonPropertyName("timestamp")]
+///     public long Timestamp { get; set; }
+///
+///     public IComparable SortKey => Timestamp;
+/// }
+///
+/// // Now pagination automatically uses the sort key:
+/// var paginator = client.Paginate&lt;MessageDto&gt;("messages:list")
+///     .WithPageSize(25)
+///     .Build();
+/// </code>
+/// </example>
+public interface IHasSortKey
+{
+    /// <summary>
+    /// Gets the sort key.
+    /// </summary>
+    IComparable SortKey { get; }
+}
+
+/// <summary>
+/// Interface for creating paginated queries.
+/// Provides cursor-based pagination for loading large datasets in manageable pages.
+/// Use this when you need to load data incrementally rather than all at once.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Pagination is useful for:
+/// <list type="bullet">
+/// <item>Loading large datasets incrementally</item>
+/// <item>Implementing "load more" functionality</item>
+/// <item>Reducing initial load time</item>
+/// <item>Handling datasets that don't fit in memory</item>
+/// </list>
+/// </para>
+/// <para>
+/// Pagination uses cursor-based pagination, which is more efficient than offset-based pagination
+/// and handles concurrent data changes better.
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// // Create a paginated query
+/// var paginator = client.PaginationSlice
+///     .Query&lt;Todo&gt;("functions/listTodos")
+///     .WithPageSize(20)
+///     .Build();
+///
+/// // Load first page
+/// var firstPage = await paginator.LoadNextAsync();
+/// Console.WriteLine($"Loaded {firstPage.Count} items");
+///
+/// // Load more pages
+/// while (paginator.HasMore)
+/// {
+///     var nextPage = await paginator.LoadNextAsync();
+///     Console.WriteLine($"Loaded {nextPage.Count} more items");
+/// }
+/// </code>
+/// </example>
+/// <seealso cref="IPaginationBuilder{T}"/>
+/// <seealso cref="IPaginator{T}"/>
+public interface IConvexPagination
+{
+    /// <summary>
+    /// Creates a pagination builder for a query function.
+    /// </summary>
+    IPaginationBuilder<T> Query<T>(string functionName);
+}
+
+/// <summary>
+/// Fluent builder for creating paginated queries.
+/// </summary>
+public interface IPaginationBuilder<T>
+{
+    /// <summary>
+    /// Sets the page size used for each request.
+    /// </summary>
+    IPaginationBuilder<T> WithPageSize(int pageSize);
+
+    /// <summary>
+    /// Sets strongly typed query arguments.
+    /// </summary>
+    IPaginationBuilder<T> WithArgs<TArgs>(TArgs args) where TArgs : notnull;
+
+    /// <summary>
+    /// Configures strongly typed query arguments.
+    /// </summary>
+    IPaginationBuilder<T> WithArgs<TArgs>(Action<TArgs> configure) where TArgs : class, new();
+
+    /// <summary>
+    /// Builds and returns a paginator for manual page loading.
+    /// </summary>
+    IPaginator<T> Build();
+}
+
+/// <summary>
+/// Defines operations for loading and managing paginated results.
+/// </summary>
+public interface IPaginator<T>
+{
+    /// <summary>
+    /// Gets a value indicating whether additional pages can be loaded.
+    /// </summary>
+    bool HasMore { get; }
+
+    /// <summary>
+    /// Gets the number of pages loaded so far.
+    /// </summary>
+    int LoadedPageCount { get; }
+
+    /// <summary>
+    /// Gets all items loaded so far.
+    /// </summary>
+    IReadOnlyList<T> LoadedItems { get; }
+
+    /// <summary>
+    /// Gets the start index for each loaded page.
+    /// The first page always starts at index 0, so boundaries represent where subsequent pages start.
+    /// Example: If pages are 25 items each, boundaries would be [0, 25, 50, 75] after loading 4 pages.
+    /// </summary>
+    IReadOnlyList<int> PageBoundaries { get; }
+
+    /// <summary>
+    /// Event raised when a new page boundary is added (when a new page is loaded).
+    /// The event argument is the index where the new page starts in LoadedItems.
+    /// </summary>
+    event Action<int>? PageBoundaryAdded;
+
+    /// <summary>
+    /// Gets the page index that contains the specified item index.
+    /// </summary>
+    /// <param name="itemIndex">The index of the item in LoadedItems.</param>
+    /// <returns>The page index (0-based) that contains this item, or -1 if index is out of range.</returns>
+    int GetPageIndex(int itemIndex);
+
+    /// <summary>
+    /// Merges paginated items with subscription updates, handling deduplication and preserving page boundaries.
+    /// </summary>
+    /// <param name="subscriptionItems">Items received from a real-time subscription.</param>
+    /// <param name="getId">Function to extract a unique identifier from an item for deduplication.</param>
+    /// <param name="getSortKey">Optional function to extract a sort key for ordering. If null, items are kept in their original order.</param>
+    /// <returns>A merged result containing the combined items and adjusted page boundaries.</returns>
+    MergedPaginationResult<T> MergeWithSubscription(
+        IEnumerable<T> subscriptionItems,
+        Func<T, string> getId,
+        Func<T, IComparable>? getSortKey = null);
+
+    /// <summary>
+    /// Loads the next page of results.
+    /// </summary>
+    Task<IReadOnlyList<T>> LoadNextAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resets the paginator to its initial state, clearing all loaded pages.
+    /// </summary>
+    void Reset();
+
+    /// <summary>
+    /// Returns an async enumerable that yields all items, automatically loading pages as needed.
+    /// </summary>
+    IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The options passed to a paginated query.
+/// </summary>
+public class PaginationOptions
+{
+    /// <summary>
+    /// Gets or sets the number of items requested per page.
+    /// </summary>
+    [JsonPropertyName("numItems")]
+    public int NumItems { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cursor used to request the next page.
+    /// </summary>
+    [JsonPropertyName("cursor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Cursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional end cursor that limits pagination.
+    /// </summary>
+    [JsonPropertyName("endCursor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EndCursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of rows the backend may read.
+    /// </summary>
+    [JsonPropertyName("maximumRowsRead")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaximumRowsRead { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of bytes the backend may read.
+    /// </summary>
+    [JsonPropertyName("maximumBytesRead")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? MaximumBytesRead { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional pagination request identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Id { get; set; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PaginationOptions"/> class.
+    /// </summary>
+    public PaginationOptions() => NumItems = 10;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PaginationOptions"/> class.
+    /// </summary>
+    public PaginationOptions(int numItems) => NumItems = numItems;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PaginationOptions"/> class.
+    /// </summary>
+    public PaginationOptions(int numItems, string? cursor)
+    {
+        NumItems = numItems;
+        Cursor = cursor;
+    }
+}
+
+/// <summary>
+/// JSON converter for PaginationResult that handles both "page" and "messages" fields.
+/// </summary>
+public class PaginationResultConverter<T> : JsonConverter<PaginationResult<T>>
+{
+    /// <summary>
+    /// Reads a <see cref="PaginationResult{T}"/> from JSON.
+    /// </summary>
+    public override PaginationResult<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var result = new PaginationResult<T>();
+        List<T>? messages = null;
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            throw new JsonException("Expected StartObject token");
+        }
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                break;
+            }
+
+            if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var propertyName = reader.GetString();
+                _ = reader.Read();
+
+                switch (propertyName)
+                {
+                    case "page":
+                        result.Page = JsonSerializer.Deserialize<List<T>>(ref reader, options) ?? new global::System.Collections.Generic.List<T>();
+                        break;
+                    case "messages":
+                        messages = JsonSerializer.Deserialize<List<T>>(ref reader, options);
+                        break;
+                    case "isDone":
+                        result.IsDone = reader.GetBoolean();
+                        break;
+                    case "continueCursor":
+                        result.ContinueCursor = reader.GetString();
+                        break;
+                    case "splitCursor":
+                        result.SplitCursor = reader.GetString();
+                        break;
+                    case "pageStatus":
+                        var statusStr = reader.GetString();
+                        if (Enum.TryParse<PageStatus>(statusStr, ignoreCase: true, out var status))
+                        {
+                            result.PageStatus = status;
+                        }
+                        break;
+                    default:
+                        reader.Skip();
+                        break;
+                }
+            }
+        }
+
+        // Use page if it has items, otherwise use messages
+        if ((result.Page == null || result.Page.Count == 0) && messages != null && messages.Count > 0)
+        {
+            result.Page = messages;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Writes a <see cref="PaginationResult{T}"/> to JSON.
+    /// </summary>
+    public override void Write(Utf8JsonWriter writer, PaginationResult<T> value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("page");
+        JsonSerializer.Serialize(writer, value.Page, options);
+        writer.WriteBoolean("isDone", value.IsDone);
+        if (value.ContinueCursor != null)
+        {
+            writer.WriteString("continueCursor", value.ContinueCursor);
+        }
+        if (value.SplitCursor != null)
+        {
+            writer.WriteString("splitCursor", value.SplitCursor);
+        }
+        if (value.PageStatus.HasValue)
+        {
+            writer.WriteString("pageStatus", value.PageStatus.Value.ToString());
+        }
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>
+/// The result of paginating a database query.
+/// </summary>
+[JsonConverter(typeof(PaginationResultConverter<>))]
+public class PaginationResult<T>
+{
+    /// <summary>
+    /// Gets or sets the page items.
+    /// </summary>
+    [JsonPropertyName("page")]
+    public List<T> Page { get; set; } = new global::System.Collections.Generic.List<T>();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether pagination is complete.
+    /// </summary>
+    [JsonPropertyName("isDone")]
+    public bool IsDone { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cursor for loading the next page.
+    /// </summary>
+    [JsonPropertyName("continueCursor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContinueCursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cursor used when the backend recommends splitting a page.
+    /// </summary>
+    [JsonPropertyName("splitCursor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SplitCursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the backend status for this page.
+    /// </summary>
+    [JsonPropertyName("pageStatus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PageStatus? PageStatus { get; set; }
+}
+
+/// <summary>
+/// The status of a paginated query page.
+/// </summary>
+public enum PageStatus
+{
+    /// <summary>
+    /// The page was returned normally.
+    /// </summary>
+    Normal,
+    /// <summary>
+    /// The backend recommends splitting the request into smaller pages.
+    /// </summary>
+    SplitRecommended,
+    /// <summary>
+    /// The backend requires splitting the request into smaller pages.
+    /// </summary>
+    SplitRequired
+}
+
+/// <summary>
+/// Result of merging paginated items with subscription updates.
+/// </summary>
+public class MergedPaginationResult<T>
+{
+    /// <summary>
+    /// The merged list of items, with deduplication applied.
+    /// </summary>
+    public IReadOnlyList<T> MergedItems { get; set; } = global::System.Array.Empty<T>();
+
+    /// <summary>
+    /// Adjusted page boundaries for the merged items.
+    /// Boundaries represent where each page starts in the merged list.
+    /// </summary>
+    public IReadOnlyList<int> AdjustedBoundaries { get; set; } = global::System.Array.Empty<int>();
+}
+
+/// <summary>
+/// Exception thrown when pagination operations fail.
+/// </summary>
+public class ConvexPaginationException : Exception
+{
+private string message;
+private string? functionName;
+private Exception? innerException;
+public ConvexPaginationException(string message, string? functionName = null, Exception? innerException = null) : base(message, innerException)
+{
+    this.FunctionName = functionName;
+    this.message = message;
+    this.functionName = functionName;
+    this.innerException = innerException;
+}    /// <summary>
+    /// Gets the query function name associated with the pagination error.
+    /// </summary>
+    public string? FunctionName { get; } }

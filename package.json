@@ -1,0 +1,18 @@
+{
+    "name": "com.ryanbliss.convex-dotnet-unity",
+    "version": "0.1.0",
+    "displayName": "Convex .NET Client for Unity (Unofficial)",
+    "description": "Unity 6 UPM packaging of the unofficial Convex .NET client (zakstam/convex-dotnet-unofficial): trimmed, down-converted to C#11 for Unity's compiler, with its managed dependencies bundled. Unofficial; not affiliated with Convex.",
+    "unity": "6000.0",
+    "keywords": [
+        "convex",
+        "realtime",
+        "websocket"
+    ],
+    "author": {
+        "name": "Ryan Bliss",
+        "url": "https://github.com/ryanbliss"
+    },
+    "license": "MIT",
+    "dependencies": {}
+}

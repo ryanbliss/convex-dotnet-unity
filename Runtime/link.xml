@@ -1,0 +1,11 @@
+<linker>
+  <!-- IL2CPP stripping preserves for the vendored Convex client's dependency
+       assemblies: Rx composes operators reflectively enough to be stripped
+       wrong, and System.Text.Json reflection-serializes the vendored protocol
+       types. -->
+  <assembly fullname="System.Reactive" preserve="all" />
+  <assembly fullname="System.Text.Json" preserve="all" />
+  <assembly fullname="System.Text.Encodings.Web" preserve="all" />
+  <assembly fullname="System.Threading.Channels" preserve="all" />
+  <assembly fullname="Convex.Client" preserve="all" />
+</linker>

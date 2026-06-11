@@ -1,0 +1,123 @@
+namespace Convex.Client.Infrastructure.Middleware;
+
+/// <summary>
+/// Represents a response from a Convex function.
+/// Used by middleware to inspect and transform responses.
+/// </summary>
+public sealed class ConvexResponse
+{
+    /// <summary>
+    /// Gets or sets the value.
+    /// </summary>
+    public object? Value { get; set; }
+
+    /// <summary>
+    /// Gets or sets the value type.
+    /// </summary>
+    public Type? ValueType { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether success.
+    /// </summary>
+    public bool IsSuccess { get; set; }
+
+    /// <summary>
+    /// Gets or sets the error.
+    /// </summary>
+    public Exception? Error { get; set; }
+
+    /// <summary>
+    /// Gets the string.
+    /// Middleware can store custom data here for passing information between middleware layers.
+    /// </summary>
+    public Dictionary<string, object?> Metadata { get; } = new global::System.Collections.Generic.Dictionary<string, object>();
+
+    /// <summary>
+    /// Executes the success operation.
+    /// </summary>
+    public static ConvexResponse Success(object? value, Type? valueType = null)
+    {
+        return new ConvexResponse
+        {
+            Value = value,
+            ValueType = valueType ?? value?.GetType(),
+            IsSuccess = true
+        };
+    }
+
+    /// <summary>
+    /// Executes the success operation.
+    /// </summary>
+    public static ConvexResponse Success<T>(T value)
+    {
+        return new ConvexResponse
+        {
+            Value = value,
+            ValueType = typeof(T),
+            IsSuccess = true
+        };
+    }
+
+    /// <summary>
+    /// Executes the failure operation.
+    /// </summary>
+    public static ConvexResponse Failure(Exception error)
+    {
+        return new ConvexResponse
+        {
+            IsSuccess = false,
+            Error = error ?? throw new ArgumentNullException(nameof(error))
+        };
+    }
+
+    /// <summary>
+    /// Gets value.
+    /// Throws an exception if the response is not successful or the value cannot be cast.
+    /// </summary>
+    public T GetValue<T>()
+    {
+        if (!IsSuccess)
+        {
+            throw new InvalidOperationException(
+                "Cannot get value from a failed response. Check IsSuccess first or use TryGetValue.",
+                Error);
+        }
+
+        if (Value is T typedValue)
+        {
+            return typedValue;
+        }
+
+        // null is a valid return value for reference types and nullable value types
+        if (Value is null && default(T) is null)
+        {
+            return default!;
+        }
+
+        throw new InvalidCastException(
+            $"Cannot cast response value of type {Value?.GetType()?.Name ?? "null"} to {typeof(T).Name}");
+    }
+
+    /// <summary>
+    /// Tries to get the value as the specified type.
+    /// Returns false if the response is not successful or the value cannot be cast.
+    /// </summary>
+    public bool TryGetValue<T>(out T? value)
+    {
+        if (IsSuccess && Value is T typedValue)
+        {
+            value = typedValue;
+            return true;
+        }
+
+        // null is a valid return value for reference types and nullable value types
+        if (IsSuccess && Value is null && default(T) is null)
+        {
+            value = default;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+}
