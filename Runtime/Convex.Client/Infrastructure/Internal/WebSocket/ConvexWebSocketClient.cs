@@ -138,6 +138,15 @@ public ConvexWebSocketClient(string deploymentUrl, SyncContextCapture? syncConte
             // Must be done BEFORE sending Connect message so it uses the correct baseVersion
             _querySetVersion = 0;
 
+            // Reset identity version too: each socket is a fresh connection whose
+            // server-side identity state starts empty, so the replayed Authenticate
+            // must start from baseVersion 0 (mirrors _querySetVersion above). Without
+            // this, every reconnect sends an ever-higher stale baseVersion, the server
+            // rejects the auth handshake, and the connection flaps Connected <->
+            // Reconnecting indefinitely. The first connect worked only because this
+            // field happened to start at 0.
+            _identityVersion = 0;
+
             // Send Connect handshake message
             // See: convex-js/src/browser/sync/client.ts:395-403
             await SendConnectMessageAsync();

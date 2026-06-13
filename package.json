@@ -1,6 +1,6 @@
 {
     "name": "com.ryanbliss.convex-dotnet-unity",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "displayName": "Convex .NET Client for Unity (Unofficial)",
     "description": "Unity 6 UPM packaging of the unofficial Convex .NET client (zakstam/convex-dotnet-unofficial): trimmed, down-converted to C#11 for Unity's compiler, with its managed dependencies bundled. Unofficial; not affiliated with Convex.",
     "unity": "6000.0",
