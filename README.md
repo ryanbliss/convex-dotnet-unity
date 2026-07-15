@@ -26,7 +26,7 @@ Unofficial: not affiliated with or endorsed by Convex or the upstream author.
 Add to your project's `Packages/manifest.json`:
 
 ```json
-"com.ryanbliss.convex-dotnet-unity": "https://github.com/ryanbliss/convex-dotnet-unity.git#v0.1.0"
+"com.ryanbliss.convex-dotnet-unity": "https://github.com/ryanbliss/convex-dotnet-unity.git#v0.1.1"
 ```
 
 Reference the `Convex.Client` assembly from your asmdef.
